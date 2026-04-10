@@ -241,5 +241,196 @@ class Gambling(commands.Cog):
             
         await interaction.edit_original_response(embed=final_embed)
 
+    @discord.app_commands.command(name="duel", description="Challenge someone to a Noir-style Rock-Paper-Scissors duel.")
+    @discord.app_commands.describe(bet="How many chips to wager (minimum 100)", target="Optional specific user to challenge")
+    async def duel(self, interaction: discord.Interaction, bet: int, target: discord.User = None):
+        if bet < 100:
+            return await interaction.response.send_message("The minimum betting amount is 100 chips.", ephemeral=True)
+
+        balance = await database.get_balance(interaction.user.id)
+        if balance < bet:
+            return await interaction.response.send_message(f"You don't have enough chips! Your balance is {balance:,}.", ephemeral=True)
+
+        # Deduct host bet immediately
+        await database.update_balance(interaction.user.id, -bet)
+        
+        view = DuelWaitView(interaction.user, bet, target)
+        
+        target_str = f"**{target.display_name}**" if target else "anyone"
+        embed = discord.Embed(
+            title="⚔️ Duel Challenge Sent!",
+            description=f"{interaction.user.display_name} is challenging {target_str} to a duel for **{bet:,}** chips!\n\nDo you have what it takes?",
+            color=discord.Color.red()
+        )
+        
+        await interaction.response.send_message(content=target.mention if target else "", embed=embed, view=view)
+        # Store message reference to allow timeout edits
+        view.message = await interaction.original_response()
+
+MATCHUPS = {
+    "Revolver": {
+        "Switchblade": "Revolver guns down the Switchblade (from a distance)!",
+        "Brass Knuckles": "Revolver out-powers the Brass Knuckles!"
+    },
+    "Switchblade": {
+        "Garrote": "Switchblade severs the Garrote (cutting the wire)!",
+        "Poison": "Switchblade stabs the Poison handler before the drink is poured!"
+    },
+    "Brass Knuckles": {
+        "Switchblade": "Brass Knuckles shatter the Switchblade!",
+        "Garrote": "Brass Knuckles knock out the Garrote wielder in a brawl!"
+    },
+    "Garrote": {
+        "Revolver": "Garrote strangles the Revolver user (from behind)!",
+        "Poison": "Garrote chokes the Poison handler silently!"
+    },
+    "Poison": {
+        "Revolver": "Poison taints the flask of the Revolver marksman!",
+        "Brass Knuckles": "Poison quietly takes down the Brass Knuckles brute!"
+    }
+}
+
+class DuelActiveView(discord.ui.View):
+    def __init__(self, p1, p2, bet):
+        super().__init__(timeout=60)
+        self.p1 = p1
+        self.p2 = p2
+        self.bet = bet
+        self.p1_choice = None
+        self.p2_choice = None
+        self.resolved = False
+        self.message = None
+
+    async def on_timeout(self):
+        if not self.resolved:
+            # Refund both players since the duel didn't finish
+            await database.update_balance(self.p1.id, self.bet)
+            await database.update_balance(self.p2.id, self.bet)
+            
+            embed = discord.Embed(
+                title="⚔️ Duel Expired",
+                description="Time ran out! Both players were refunded their bets.",
+                color=discord.Color.dark_gray()
+            )
+            for child in self.children:
+                child.disabled = True
+            if self.message:
+                await self.message.edit(embed=embed, view=self)
+
+    async def process_choice(self, interaction: discord.Interaction, weapon: str):
+        if interaction.user not in [self.p1, self.p2]:
+            return await interaction.response.send_message("You are not part of this duel!", ephemeral=True)
+            
+        if interaction.user == self.p1:
+            if self.p1_choice:
+                return await interaction.response.send_message("You already locked in your weapon!", ephemeral=True)
+            self.p1_choice = weapon
+        elif interaction.user == self.p2:
+            if self.p2_choice:
+                return await interaction.response.send_message("You already locked in your weapon!", ephemeral=True)
+            self.p2_choice = weapon
+            
+        await interaction.response.send_message(f"You locked in: **{weapon}** 🤫", ephemeral=True)
+        
+        if self.p1_choice and self.p2_choice and not self.resolved:
+            self.resolved = True
+            self.stop()
+            for child in self.children:
+                child.disabled = True
+                
+            w1 = self.p1_choice
+            w2 = self.p2_choice
+            
+            if w1 == w2:
+                # Tie
+                await database.update_balance(self.p1.id, self.bet)
+                await database.update_balance(self.p2.id, self.bet)
+                desc = f"Both players chose **{w1}**. It's a standoff!\nBets have been returned."
+                color = discord.Color.orange()
+            elif MATCHUPS[w1].get(w2):
+                # p1 wins
+                await database.update_balance(self.p1.id, self.bet * 2)
+                desc = f"**{self.p1.display_name}** wins!\n*{MATCHUPS[w1][w2]}*\n\nThey walk away with **{self.bet * 2:,}** chips."
+                color = discord.Color.green()
+            else:
+                # p2 wins
+                await database.update_balance(self.p2.id, self.bet * 2)
+                desc = f"**{self.p2.display_name}** wins!\n*{MATCHUPS[w2][w1]}*\n\nThey walk away with **{self.bet * 2:,}** chips."
+                color = discord.Color.red()
+                
+            embed = discord.Embed(title="⚔️ Duel Results", description=desc, color=color)
+            embed.add_field(name=self.p1.display_name, value=w1, inline=True)
+            embed.add_field(name=self.p2.display_name, value=w2, inline=True)
+            
+            if self.message:
+                await self.message.edit(embed=embed, view=self)
+
+    @discord.ui.button(emoji="🔫", label="Revolver", style=discord.ButtonStyle.secondary)
+    async def b1(self, interaction, button): await self.process_choice(interaction, "Revolver")
+
+    @discord.ui.button(emoji="🔪", label="Switchblade", style=discord.ButtonStyle.secondary)
+    async def b2(self, interaction, button): await self.process_choice(interaction, "Switchblade")
+
+    @discord.ui.button(emoji="👊", label="Brass Knuckles", style=discord.ButtonStyle.secondary)
+    async def b3(self, interaction, button): await self.process_choice(interaction, "Brass Knuckles")
+
+    @discord.ui.button(emoji="🪢", label="Garrote", style=discord.ButtonStyle.secondary)
+    async def b4(self, interaction, button): await self.process_choice(interaction, "Garrote")
+
+    @discord.ui.button(emoji="🧪", label="Poison", style=discord.ButtonStyle.secondary)
+    async def b5(self, interaction, button): await self.process_choice(interaction, "Poison")
+
+
+class DuelWaitView(discord.ui.View):
+    def __init__(self, host: discord.User, bet: int, target: discord.User = None):
+        super().__init__(timeout=180)
+        self.host = host
+        self.bet = bet
+        self.target = target
+        self.accepted = False
+        self.opponent = None
+        self.message = None
+
+    async def on_timeout(self):
+        if not self.accepted:
+            # Refund host who already paid
+            await database.update_balance(self.host.id, self.bet)
+            for child in self.children:
+                child.disabled = True
+            
+            embed = discord.Embed(title="⚔️ Duel Cancelled", description="Nobody accepted the duel in time. Bet refunded.", color=discord.Color.dark_gray())
+            if self.message:
+                await self.message.edit(embed=embed, view=self)
+
+    @discord.ui.button(label="Accept Duel", style=discord.ButtonStyle.danger, custom_id="accept_duel", emoji="⚔️")
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user == self.host:
+            return await interaction.response.send_message("You cannot duel yourself!", ephemeral=True)
+            
+        if self.target and interaction.user != self.target:
+            return await interaction.response.send_message(f"This duel is specifically targeted at {self.target.display_name}!", ephemeral=True)
+            
+        op_bal = await database.get_balance(interaction.user.id)
+        if op_bal < self.bet:
+            return await interaction.response.send_message(f"You don't have enough chips to match the **{self.bet:,}** chip bet!\nYour balance: {op_bal:,}", ephemeral=True)
+            
+        self.accepted = True
+        self.opponent = interaction.user
+        self.stop()
+        
+        # Deduct opponent bet (host bet already deducted when starting)
+        await database.update_balance(self.opponent.id, -self.bet)
+        
+        active_view = DuelActiveView(self.host, self.opponent, self.bet)
+        
+        embed = discord.Embed(
+            title="⚔️ Duel: Choose Your Weapon!",
+            description=f"**{self.host.display_name}** vs **{self.opponent.display_name}**\n\nBoth players must securely lock in their choices below.\nPot: **{self.bet * 2:,}** chips",
+            color=discord.Color.purple()
+        )
+        await interaction.response.edit_message(embed=embed, view=active_view)
+        
+        # We need to set active_view's message to the edited message so it can edit it upon resolve
+        active_view.message = interaction.message
 async def setup(bot):
     await bot.add_cog(Gambling(bot))
