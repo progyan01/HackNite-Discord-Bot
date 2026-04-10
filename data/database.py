@@ -13,7 +13,7 @@ async def setup():
         """)
         await db.commit()
 
-async def get_balance(user_id: int) -> int:
+async def get_balance(user_id: int, create_if_missing: bool = True) -> int | None:
     """Gets the balance of a specific user."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)) as cursor:
@@ -21,9 +21,11 @@ async def get_balance(user_id: int) -> int:
             if row:
                 return row[0]
             else:
-                # If user doesn't exist, insert them with default 1000 balance
-                await update_balance(user_id, 1000)
-                return 1000
+                if create_if_missing:
+                    # If user doesn't exist, insert them with default 1000 balance
+                    await update_balance(user_id, 1000)
+                    return 1000
+                return None
 
 async def update_balance(user_id: int, amount: int):
     """Adds the given amount to the user's balance."""

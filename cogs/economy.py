@@ -10,8 +10,14 @@ class Economy(commands.Cog):
     @discord.app_commands.describe(member="The member whose balance to check (optional)")
     async def balance(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
-        balance = await database.get_balance(target.id)
+        # Allow creating the account if it's the user checking their own balance
+        should_create = (member is None) or (member == interaction.user)
+        balance = await database.get_balance(target.id, create_if_missing=should_create)
         
+        if balance is None:
+            await interaction.response.send_message(f"**{target.display_name}** doesn't have an account yet.", ephemeral=True)
+            return
+
         embed = discord.Embed(
             title=f"💳 Balance: {target.display_name}",
             description=f"**{balance:,}** chips",
