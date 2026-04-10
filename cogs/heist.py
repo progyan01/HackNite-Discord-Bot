@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import random
+import datetime
 from data import database
 
 class Heist(commands.Cog):
@@ -9,6 +10,8 @@ class Heist(commands.Cog):
         self.bot = bot
         # Simple memory storage for active lobbies: {user_id: {"target": str, "crew": [discord.Member]}}
         self.active_heists = {} 
+        # Timeouts: {user_id: datetime}
+        self.heist_timeouts = {} 
 
     heist_group = app_commands.Group(name="heist", description="Las Vegas Heist Roleplay commands")
 
@@ -20,6 +23,15 @@ class Heist(commands.Cog):
         app_commands.Choice(name="Casino Vault (High Risk, 3-4 players)", value="casino_vault")
     ])
     async def start_heist(self, interaction: discord.Interaction, target: str):
+        if interaction.user.id in self.heist_timeouts:
+            expiry = self.heist_timeouts[interaction.user.id]
+            if datetime.datetime.now(datetime.timezone.utc) < expiry:
+                remaining = int((expiry - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
+                await interaction.response.send_message(f"You are laying low! Try again in {remaining} seconds.", ephemeral=True)
+                return
+            else:
+                del self.heist_timeouts[interaction.user.id]
+
         if interaction.user.id in self.active_heists:
             await interaction.response.send_message("You already have an active heist lobby!", ephemeral=True)
             return
@@ -35,6 +47,15 @@ class Heist(commands.Cog):
 
     @heist_group.command(name="join", description="Join an active heist lobby")
     async def join_heist(self, interaction: discord.Interaction, host: discord.User):
+        if interaction.user.id in self.heist_timeouts:
+            expiry = self.heist_timeouts[interaction.user.id]
+            if datetime.datetime.now(datetime.timezone.utc) < expiry:
+                remaining = int((expiry - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
+                await interaction.response.send_message(f"You are laying low! Try again in {remaining} seconds.", ephemeral=True)
+                return
+            else:
+                del self.heist_timeouts[interaction.user.id]
+
         lobby = self.active_heists.get(host.id)
         if not lobby:
             await interaction.response.send_message("That user doesn't have an active heist lobby.", ephemeral=True)
@@ -67,20 +88,44 @@ class Heist(commands.Cog):
             await interaction.response.send_message("You need at least 3 people for the Casino Vault!")
             return
 
-        # Basic Skeleton outcome generator
+        # Configure mechanics per target
+        if target == "gas_station":
+            success_threshold = 50
+            share = random.randint(100, 500)
+            fail_penalty = 300
+            timeout_duration = datetime.timedelta(seconds=30)
+        elif target == "jewelry_store":
+            success_threshold = 25
+            share = random.randint(1000, 2000)
+            fail_penalty = 700
+            timeout_duration = datetime.timedelta(minutes=1)
+        else: # casino_vault
+            success_threshold = 7
+            share = random.randint(4000, 5000)
+            fail_penalty = 1500
+            timeout_duration = datetime.timedelta(minutes=2)
+
         success_chance = random.randint(1, 100)
         
-        # You will likely want to build this out!
-        if success_chance > 40: # 60% win rate
-            payout = random.randint(500, 2000) * crew_size
-            share = payout // crew_size
+        if success_chance <= success_threshold:
+            payout = share * crew_size
             
             for user in crew:
                 await database.update_balance(user.id, share)
                 
-            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ')} cleanly and got away with **{payout}** chips to split between the crew (**{share}** chips each)!")
+            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ').title()} cleanly and got away with **{payout}** chips to split between the crew (**{share}** chips each)!")
         else:
-            await interaction.response.send_message(f"🚨 FAILED! The cops showed up at the {target.replace('_', ' ')}. You all got busted!")
+            expiry_time = datetime.datetime.now(datetime.timezone.utc) + timeout_duration
+            for user in crew:
+                await database.update_balance(user.id, -fail_penalty)
+                self.heist_timeouts[user.id] = expiry_time
+                        
+            # Format time duration neatly
+            mins = timeout_duration.total_seconds() // 60
+            secs = timeout_duration.total_seconds() % 60
+            time_str = f"{int(mins)}m {int(secs)}s" if mins > 0 else f"{int(secs)}s"
+
+            await interaction.response.send_message(f"🚨 FAILED! The cops showed up at the {target.replace('_', ' ').title()}. You all got busted! Each crew member lost **{fail_penalty}** chips and is in time-out for **{time_str}**!")
 
         # Clean up lobby
         del self.active_heists[interaction.user.id]
