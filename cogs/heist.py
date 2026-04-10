@@ -2,8 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import random
-# Uncomment this when you want to interact with the database in the future:
-# from data import database
+from data import database
 
 class Heist(commands.Cog):
     def __init__(self, bot):
@@ -74,10 +73,12 @@ class Heist(commands.Cog):
         # You will likely want to build this out!
         if success_chance > 40: # 60% win rate
             payout = random.randint(500, 2000) * crew_size
-            # Example database hook:
-            # for user in crew:
-            #     await database.update_balance(user.id, payout)
-            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ')} cleanly and got away with ${payout} to split between the crew!")
+            share = payout // crew_size
+            
+            for user in crew:
+                await database.update_balance(user.id, share)
+                
+            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ')} cleanly and got away with **{payout}** chips to split between the crew (**{share}** chips each)!")
         else:
             await interaction.response.send_message(f"🚨 FAILED! The cops showed up at the {target.replace('_', ' ')}. You all got busted!")
 
