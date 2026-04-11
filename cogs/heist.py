@@ -70,7 +70,13 @@ class Heist(commands.Cog):
         await interaction.response.send_message(f"😎 {interaction.user.mention} joined the heist! Current crew: {crew_names}")
 
     @heist_group.command(name="launch", description="Launch your planned heist!")
-    async def launch_heist(self, interaction: discord.Interaction):
+    @app_commands.describe(perk="Optional perk to boost your success chance")
+    @app_commands.choices(perk=[
+        app_commands.Choice(name="10% Boost", value="perk_10"),
+        app_commands.Choice(name="15% Boost", value="perk_15"),
+        app_commands.Choice(name="20% Boost", value="perk_20")
+    ])
+    async def launch_heist(self, interaction: discord.Interaction, perk: str = None):
         lobby = self.active_heists.get(interaction.user.id)
         if not lobby:
             await interaction.response.send_message("You haven't setup a heist yet! Use `/heist start`.", ephemeral=True)
@@ -105,6 +111,26 @@ class Heist(commands.Cog):
             fail_penalty = 1500
             timeout_duration = datetime.timedelta(minutes=2)
 
+        perk_name = ""
+        if perk:
+            inv = await database.get_inventory(interaction.user.id)
+            if inv.get(perk, 0) < 1:
+                return await interaction.response.send_message("You do not own that perk. Check `/inventory`.", ephemeral=True)
+            
+            # Deduct the perk
+            await database.update_perk(interaction.user.id, perk, -1)
+            
+            # Apply boost
+            if perk == "perk_10":
+                success_threshold += 10
+                perk_name = "10% Boost Perk"
+            elif perk == "perk_15":
+                success_threshold += 15
+                perk_name = "15% Boost Perk"
+            elif perk == "perk_20":
+                success_threshold += 20
+                perk_name = "20% Boost Perk"
+
         success_chance = random.randint(1, 100)
         
         if success_chance <= success_threshold:
@@ -113,7 +139,8 @@ class Heist(commands.Cog):
             for user in crew:
                 await database.update_balance(user.id, share)
                 
-            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ').title()} cleanly and got away with **{payout}** chips to split between the crew (**{share}** chips each)!")
+            perk_text = f"\n*Used {perk_name} for a better chance!*" if perk else ""
+            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ').title()} cleanly and got away with **{payout}** chips to split between the crew (**{share}** chips each)!{perk_text}")
         else:
             expiry_time = datetime.datetime.now(datetime.timezone.utc) + timeout_duration
             for user in crew:
@@ -124,8 +151,9 @@ class Heist(commands.Cog):
             mins = timeout_duration.total_seconds() // 60
             secs = timeout_duration.total_seconds() % 60
             time_str = f"{int(mins)}m {int(secs)}s" if mins > 0 else f"{int(secs)}s"
-
-            await interaction.response.send_message(f"🚨 FAILED! The cops showed up at the {target.replace('_', ' ').title()}. You all got busted! Each crew member lost **{fail_penalty}** chips and is in time-out for **{time_str}**!")
+            
+            perk_text = f"\n*Even with the {perk_name}, luck was not on your side.*" if perk else ""
+            await interaction.response.send_message(f"🚨 FAILED! The cops showed up at the {target.replace('_', ' ').title()}. You all got busted! Each crew member lost **{fail_penalty}** chips and is in time-out for **{time_str}**!{perk_text}")
 
         # Clean up lobby
         del self.active_heists[interaction.user.id]
