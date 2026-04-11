@@ -25,6 +25,21 @@ async def setup():
         except sqlite3.OperationalError:
             pass # Column already exists
             
+        try:
+            await db.execute("ALTER TABLE inventory ADD COLUMN perk_10 INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+            
+        try:
+            await db.execute("ALTER TABLE inventory ADD COLUMN perk_15 INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+            
+        try:
+            await db.execute("ALTER TABLE inventory ADD COLUMN perk_20 INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+
         await db.commit()
 
 async def get_inventory(user_id: int) -> dict:
