@@ -61,19 +61,19 @@ async def get_balance(user_id: int, create_if_missing: bool = True) -> int | Non
             else:
                 if create_if_missing:
                     # If user doesn't exist, insert them with default 1000 balance
-                    await update_balance(user_id, 1000)
+                    await update_balance(user_id, 0)
                     return 1000
                 return None
 
 async def update_balance(user_id: int, amount: int):
     """Adds the given amount to the user's balance."""
     async with aiosqlite.connect(DB_PATH) as db:
-        # Insert user if they don't exist or increase balance
+        # Insert user with 1000 + amount if they don't exist, otherwise increase by amount
         await db.execute("""
             INSERT INTO users (user_id, balance) 
             VALUES (?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET balance = balance + excluded.balance
-        """, (user_id, amount))
+            ON CONFLICT(user_id) DO UPDATE SET balance = balance + ?
+        """, (user_id, 1000 + amount, amount))
         await db.commit()
 
 async def get_last_daily(user_id: int) -> str | None:
