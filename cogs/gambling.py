@@ -31,6 +31,26 @@ def calculate_hand_value(hand):
 def format_hand(hand):
     return " ".join(f"`{card}`" for card in hand)
 
+async def handle_perk_drop(user_id: int) -> str | None:
+    chance = random.random()
+    if chance > 0.05: # 5% total chance
+        return None
+        
+    roll = random.random()
+    if roll < 0.6: 
+        perk = "perk_10"
+        name = "10% Boost Perk"
+    elif roll < 0.9: 
+        perk = "perk_15"
+        name = "15% Boost Perk"
+    else: 
+        perk = "perk_20"
+        name = "20% Boost Perk"
+        
+    await database.update_perk(user_id, perk, 1)
+    return name
+
+
 class BlackjackView(discord.ui.View):
     def __init__(self, user, bet):
         super().__init__(timeout=180)
@@ -90,6 +110,10 @@ class BlackjackView(discord.ui.View):
             
         embed = self.generate_embed(True, msg, color)
         await interaction.response.edit_message(embed=embed, view=self)
+        
+        drop_msg = await handle_perk_drop(self.user.id)
+        if drop_msg:
+            await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while playing!", ephemeral=True)
 
     @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary, custom_id="hit", emoji="🎯")
     async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -107,6 +131,10 @@ class BlackjackView(discord.ui.View):
             # Loss, bet is already deducted
             embed = self.generate_embed(True, f"Bust! You went over 21. You lost {self.bet:,} chips.", discord.Color.red())
             await interaction.response.edit_message(embed=embed, view=self)
+            
+            drop_msg = await handle_perk_drop(self.user.id)
+            if drop_msg:
+                await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while playing!", ephemeral=True)
         else:
             embed = self.generate_embed()
             await interaction.response.edit_message(embed=embed, view=self)
@@ -155,6 +183,10 @@ class Gambling(commands.Cog):
                 embed = view.generate_embed(True, f"Blackjack! You won {win_amount:,} chips!", discord.Color.green())
                 
             await interaction.response.send_message(embed=embed, view=view)
+            
+            drop_msg = await handle_perk_drop(interaction.user.id)
+            if drop_msg:
+                await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while playing!", ephemeral=True)
             return
 
         embed = view.generate_embed()
@@ -240,6 +272,10 @@ class Gambling(commands.Cog):
             final_embed.add_field(name="😢 Better Luck Next Time", value=f"You didn't match any rows.\nLost **{bet:,}** chips.", inline=False)
             
         await interaction.edit_original_response(embed=final_embed)
+        
+        drop_msg = await handle_perk_drop(interaction.user.id)
+        if drop_msg:
+            await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while spinning!", ephemeral=True)
 
     @discord.app_commands.command(name="duel", description="Challenge someone to a Noir-style Rock-Paper-Scissors duel.")
     @discord.app_commands.describe(bet="How many chips to wager (minimum 100)", target="Optional specific user to challenge")

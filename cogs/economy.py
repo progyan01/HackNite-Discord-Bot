@@ -53,5 +53,80 @@ class Economy(commands.Cog):
         )
         await interaction.response.send_message(embed=embed)
 
+    @discord.app_commands.command(name="inventory", description="View your owned Heist Perks.")
+    async def inventory(self, interaction: discord.Interaction):
+        inv = await database.get_inventory(interaction.user.id)
+        embed = discord.Embed(
+            title=f"🎒 {interaction.user.display_name}'s Inventory",
+            color=discord.Color.blue()
+        )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url if interaction.user.display_avatar else interaction.user.default_avatar.url)
+        
+        embed.add_field(name="🔸 10% Boost Perk", value=f"x{inv['perk_10']}", inline=False)
+        embed.add_field(name="🔹 15% Boost Perk", value=f"x{inv['perk_15']}", inline=False)
+        embed.add_field(name="🌟 20% Boost Perk", value=f"x{inv['perk_20']}", inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+
+    @discord.app_commands.command(name="buy", description="Buy perks from the marketplace.")
+    @discord.app_commands.describe(perk="Which perk to buy")
+    @discord.app_commands.choices(perk=[
+        discord.app_commands.Choice(name="10% Boost (1000 chips)", value="perk_10"),
+        discord.app_commands.Choice(name="15% Boost (2000 chips)", value="perk_15"),
+        discord.app_commands.Choice(name="20% Boost (3000 chips)", value="perk_20")
+    ])
+    async def buy(self, interaction: discord.Interaction, perk: str):
+        prices = {"perk_10": 1000, "perk_15": 2000, "perk_20": 3000}
+        names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk"}
+        
+        price = prices[perk]
+        balance = await database.get_balance(interaction.user.id)
+        
+        if balance < price:
+            return await interaction.response.send_message(f"❌ You don't have enough chips! You need **{price}** chips.", ephemeral=True)
+            
+        await database.update_balance(interaction.user.id, -price)
+        await database.update_perk(interaction.user.id, perk, 1)
+        
+        await interaction.response.send_message(f"✅ You successfully bought a **{names[perk]}** for **{price}** chips!\nCheck it with `/inventory`.")
+
+    @discord.app_commands.command(name="pay", description="Transfer chips to another user.")
+    @discord.app_commands.describe(target="The user to pay", amount="The amount of chips to transfer")
+    async def pay(self, interaction: discord.Interaction, target: discord.User, amount: int):
+        if amount <= 0:
+            return await interaction.response.send_message("❌ Amount must be greater than 0.", ephemeral=True)
+        if target.id == interaction.user.id:
+            return await interaction.response.send_message("❌ You cannot pay yourself.", ephemeral=True)
+            
+        balance = await database.get_balance(interaction.user.id)
+        if balance < amount:
+            return await interaction.response.send_message("❌ You don't have enough chips.", ephemeral=True)
+            
+        await database.update_balance(interaction.user.id, -amount)
+        await database.update_balance(target.id, amount)
+        await interaction.response.send_message(f"💸 You paid **{target.display_name}** **{amount:,}** chips.")
+
+    @discord.app_commands.command(name="give_perk", description="Transfer a perk to another user.")
+    @discord.app_commands.describe(target="The user to receive the perk", perk="Which perk to give")
+    @discord.app_commands.choices(perk=[
+        discord.app_commands.Choice(name="10% Boost", value="perk_10"),
+        discord.app_commands.Choice(name="15% Boost", value="perk_15"),
+        discord.app_commands.Choice(name="20% Boost", value="perk_20")
+    ])
+    async def give_perk(self, interaction: discord.Interaction, target: discord.User, perk: str):
+        if target.id == interaction.user.id:
+            return await interaction.response.send_message("❌ You cannot give a perk to yourself.", ephemeral=True)
+            
+        inv = await database.get_inventory(interaction.user.id)
+        if inv.get(perk, 0) < 1:
+            return await interaction.response.send_message("❌ You do not own this perk.", ephemeral=True)
+            
+        names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk"}
+        
+        await database.update_perk(interaction.user.id, perk, -1)
+        await database.update_perk(target.id, perk, 1)
+        await interaction.response.send_message(f"🎁 You successfully transferred a **{names[perk]}** to **{target.display_name}**.")
+
+
 async def setup(bot):
     await bot.add_cog(Economy(bot))
