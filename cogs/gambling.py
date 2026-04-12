@@ -145,7 +145,35 @@ class BlackjackView(discord.ui.View):
             return await interaction.response.send_message("This is not your table!", ephemeral=True)
             
         await self.dealer_play(interaction)
+        
+class CrashView(discord.ui.View):
+    def __init__(self, user, bet):
+        super().__init__(timeout=None)
+        self.user = user
+        self.bet = bet
+        self.cashed_out = False
+        self.current_multiplier = 1.0
 
+    @discord.ui.button(label="Cash Out", style=discord.ButtonStyle.success, custom_id="cash_out", emoji="💸")
+    async def cash_out(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            return await interaction.response.send_message("Not your game!", ephemeral=True)
+            
+        self.cashed_out = True
+        for child in self.children:
+            child.disabled = True
+            
+        win_amt = int(self.bet * self.current_multiplier)
+        await database.update_balance(self.user.id, win_amt)
+        
+        embed = discord.Embed(
+            title="📈 CRASH",
+            description=f"✅ You cashed out at **{self.current_multiplier:.1f}x**!\nWon **{win_amt:,}** chips.",
+            color=discord.Color.green()
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
 
 class Gambling(commands.Cog):
     def __init__(self, bot):
@@ -467,6 +495,7 @@ class DuelWaitView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=active_view)
         
         # We need to set active_view's message to the edited message so it can edit it upon resolve
-        active_view.message = interaction.message
+
+
 async def setup(bot):
     await bot.add_cog(Gambling(bot))
