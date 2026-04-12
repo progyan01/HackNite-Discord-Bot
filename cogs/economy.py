@@ -225,6 +225,12 @@ class Economy(commands.Cog):
         desc = ""
         for i, u in enumerate(top_users):
             user_obj = self.bot.get_user(u["user_id"])
+            if not user_obj:
+                try:
+                    user_obj = await self.bot.fetch_user(u["user_id"])
+                except discord.NotFound:
+                    pass
+                    
             name = user_obj.display_name if user_obj else f"User {u['user_id']}"
             
             medal = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else f"`{i+1}.`"
