@@ -27,13 +27,19 @@ class Heist(commands.Cog):
     heist_group = app_commands.Group(name="heist", description="Las Vegas Heist Roleplay commands")
 
     @heist_group.command(name="start", description="Start a new heist lobby")
-    @app_commands.describe(target="Where do you want to rob?")
+    @app_commands.describe(target="Where do you want to rob?", role="What role do you want to play?")
     @app_commands.choices(target=[
         app_commands.Choice(name="Gas Station (Low Risk, 1-2 players)", value="gas_station"),
         app_commands.Choice(name="Jewelry Store (Medium Risk, 2-3 players)", value="jewelry_store"),
         app_commands.Choice(name="Casino Vault (High Risk, 3-4 players)", value="casino_vault")
     ])
-    async def start_heist(self, interaction: discord.Interaction, target: str):
+    @app_commands.choices(role=[
+        app_commands.Choice(name="Driver", value="Driver"),
+        app_commands.Choice(name="Muscle", value="Muscle"),
+        app_commands.Choice(name="Hacker", value="Hacker"),
+        app_commands.Choice(name="Inside Man", value="Inside Man")
+    ])
+    async def start_heist(self, interaction: discord.Interaction, target: str, role: str):
         if interaction.user.id in self.heist_timeouts:
             expiry = self.heist_timeouts[interaction.user.id]
             if datetime.datetime.now(datetime.timezone.utc) < expiry:
@@ -47,14 +53,17 @@ class Heist(commands.Cog):
             await interaction.response.send_message("You already have an active heist lobby!", ephemeral=True)
             return
         
+        roles = {"Driver": None, "Muscle": None, "Hacker": None, "Inside Man": None}
+        roles[role] = interaction.user
+
         self.active_heists[interaction.user.id] = {
             "target": target,
-            "roles": {"Driver": interaction.user, "Muscle": None, "Hacker": None, "Inside Man": None},
+            "roles": roles,
             "start_time": datetime.datetime.now(datetime.timezone.utc)
         }
         await interaction.response.send_message(
             f"💰 {interaction.user.mention} is planning a heist on a **{target.replace('_', ' ').title()}**!\n"
-            f"Host is taking the **Driver** role. Anyone else want in?\n"
+            f"Host is taking the **{role}** role. Anyone else want in?\n"
             f"(Use `/heist join {interaction.user.display_name} <role>`)\n"
             f"⏱️ You have **2 minutes** to launch the heist before the lobby expires."
         )
