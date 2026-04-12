@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import random
 import datetime
@@ -8,10 +8,21 @@ from data import database
 class Heist(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Simple memory storage for active lobbies: {user_id: {"target": str, "crew": [discord.Member]}}
+        # Simple memory storage for active lobbies: {user_id: {"target": str, "crew": [discord.Member], "start_time": datetime}}
         self.active_heists = {} 
         # Timeouts: {user_id: datetime}
         self.heist_timeouts = {} 
+        self.lobby_cleanup.start()
+
+    def cog_unload(self):
+        self.lobby_cleanup.cancel()
+
+    @tasks.loop(seconds=15)
+    async def lobby_cleanup(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expired = [uid for uid, lobby in self.active_heists.items() if (now - lobby["start_time"]).total_seconds() > 120]
+        for uid in expired:
+            del self.active_heists[uid]
 
     heist_group = app_commands.Group(name="heist", description="Las Vegas Heist Roleplay commands")
 
@@ -38,11 +49,13 @@ class Heist(commands.Cog):
         
         self.active_heists[interaction.user.id] = {
             "target": target,
-            "crew": [interaction.user]
+            "crew": [interaction.user],
+            "start_time": datetime.datetime.now(datetime.timezone.utc)
         }
         await interaction.response.send_message(
             f"💰 {interaction.user.mention} is planning a heist on a **{target.replace('_', ' ').title()}**!\n"
-            f"Crew: {interaction.user.display_name}. Anyone else want in? (Use `/heist join {interaction.user.display_name}`)"
+            f"Crew: {interaction.user.display_name}. Anyone else want in? (Use `/heist join {interaction.user.display_name}`)\n"
+            f"⏱️ You have **2 minutes** to launch the heist before the lobby expires."
         )
 
     @heist_group.command(name="join", description="Join an active heist lobby")
