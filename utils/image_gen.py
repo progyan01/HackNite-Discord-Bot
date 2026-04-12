@@ -376,3 +376,133 @@ def render_slots_machine(grid, spinning=False, win_rows=None):
     img.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+
+
+# ─────────────────────────────────────────────────────
+# Heist Result Image Renderer
+# ─────────────────────────────────────────────────────
+
+def render_heist_result(
+    target_name: str,
+    target_emoji: str,
+    crew: list[str],
+    payout: int,
+    share: int,
+    success: bool,
+) -> BytesIO:
+    """
+    Renders a premium heist result card.
+
+    Args:
+        target_name: Human-readable target name (e.g. "Casino Vault")
+        target_emoji: Emoji for the target (e.g. "🎰")
+        crew: List of crew member display names
+        payout: Total payout (success) or penalty per person (fail)
+        share: Per-person amount
+        success: True for a success card, False for a bust card
+
+    Returns:
+        BytesIO PNG buffer.
+    """
+    W, H = 560, 420
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # ── Background gradient (dark slate) ──
+    for y in range(H):
+        t = y / H
+        r_val = int(18 + 12 * t)
+        g_val = int(18 + 12 * t)
+        b_val = int(30 + 20 * t)
+        draw.line([(0, y), (W, y)], fill=(r_val, g_val, b_val))
+
+    # ── Outer accent border ──
+    accent = (50, 200, 80) if success else (220, 50, 50)
+    draw.rounded_rectangle([8, 8, W - 8, H - 8], radius=18, fill=None, outline=accent, width=4)
+    draw.rounded_rectangle([13, 13, W - 13, H - 13], radius=15, fill=None, outline=(*accent, 60), width=2)
+
+    # ── TOP BANNER ──
+    banner_h = 80
+    banner_color = (20, 90, 30) if success else (100, 20, 20)
+    draw.rounded_rectangle([20, 20, W - 20, 20 + banner_h], radius=12, fill=banner_color, outline=accent, width=2)
+
+    outcome_font = get_font(34)
+    outcome_text = "✦  HEIST SUCCESSFUL  ✦" if success else "✦  BUSTED  ✦"
+    bb = outcome_font.getbbox(outcome_text)
+    ow = bb[2] - bb[0]
+    draw.text(((W - ow) // 2, 32), outcome_text, fill=(255, 255, 255), font=outcome_font)
+
+    sub_font = get_font(17)
+    sub_text = f"{target_emoji}  {target_name}"
+    sbb = sub_font.getbbox(sub_text)
+    sw = sbb[2] - sbb[0]
+    draw.text(((W - sw) // 2, 72), sub_text, fill=(200, 200, 200), font=sub_font)
+
+    # ── Divider ──
+    divider_y = 20 + banner_h + 14
+    draw.line([(40, divider_y), (W - 40, divider_y)], fill=(*accent, 160), width=2)
+
+    # ── CREW SECTION ──
+    crew_y = divider_y + 14
+    crew_header_font = get_font(16)
+    draw.text((40, crew_y), "CREW", fill=(160, 160, 200), font=crew_header_font)
+
+    crew_font = get_font(20)
+    role_emojis = ["🚗", "💪", "💻", "🕵️", "🎭", "🔫"]  # fallbacks
+    name_y = crew_y + 24
+    col_w = (W - 80) // 2
+
+    for i, name in enumerate(crew[:6]):  # max 6 members
+        col = i % 2
+        row = i // 2
+        cx = 40 + col * col_w
+        cy = name_y + row * 30
+        emoji = role_emojis[i] if i < len(role_emojis) else "👤"
+        draw.text((cx, cy), f"{emoji}  {name}", fill=(230, 230, 230), font=crew_font)
+
+    # ── Payout / Penalty section ──
+    payout_y = name_y + (math.ceil(len(crew) / 2)) * 30 + 16
+    draw.line([(40, payout_y), (W - 40, payout_y)], fill=(80, 80, 120, 140), width=1)
+    payout_y += 14
+
+    pay_label_font = get_font(16)
+    pay_val_font = get_font(30)
+
+    if success:
+        label1 = "TOTAL PAYOUT"
+        val1 = f"{payout:,} chips"
+        label2 = "EACH GETS"
+        val2 = f"{share:,} chips"
+        val1_color = (100, 240, 120)
+        val2_color = (180, 255, 180)
+    else:
+        label1 = "PENALTY PER PERSON"
+        val1 = f"−{share:,} chips"
+        label2 = "TOTAL LOST"
+        val2 = f"−{payout:,} chips"
+        val1_color = (255, 100, 100)
+        val2_color = (255, 180, 180)
+
+    # Two columns for payout info
+    col1_x = 40
+    col2_x = W // 2 + 20
+
+    draw.text((col1_x, payout_y), label1, fill=(140, 140, 180), font=pay_label_font)
+    draw.text((col1_x, payout_y + 22), val1, fill=val1_color, font=pay_val_font)
+
+    draw.text((col2_x, payout_y), label2, fill=(140, 140, 180), font=pay_label_font)
+    draw.text((col2_x, payout_y + 22), val2, fill=val2_color, font=pay_val_font)
+
+    # ── Bottom stamp ──
+    stamp_y = H - 36
+    stamp_font = get_font(13)
+    stamp = "SIN CITY  •  LAS VEGAS UNDERGROUND"
+    sbb2 = stamp_font.getbbox(stamp)
+    stamp_w = sbb2[2] - sbb2[0]
+    draw.text(((W - stamp_w) // 2, stamp_y), stamp, fill=(80, 80, 110), font=stamp_font)
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+

@@ -295,18 +295,20 @@ class Gambling(commands.Cog):
     @discord.app_commands.command(name="slots", description="Pull the handle on our 3x3 slot machine!")
     @discord.app_commands.describe(bet="How many chips to bet (minimum 100)")
     async def slots(self, interaction: discord.Interaction, bet: int):
+        # Defer immediately — image generation + DB calls take > 3 seconds
+        await interaction.response.defer()
+
         if bet < 100:
-            return await interaction.response.send_message("The minimum betting amount is 100 chips.", ephemeral=True)
+            return await interaction.followup.send("The minimum betting amount is 100 chips.", ephemeral=True)
 
         balance = await database.get_balance(interaction.user.id)
         if balance < bet:
-            return await interaction.response.send_message(f"You don't have enough chips! Your balance is {balance:,}.", ephemeral=True)
+            return await interaction.followup.send(f"You don't have enough chips! Your balance is {balance:,}.", ephemeral=True)
 
         # Deduct bet
         await database.update_balance(interaction.user.id, -bet)
 
-        # Slot Machine Configuration
-        # (Symbol, Multiplier for 3-in-a-row)
+        # Slot Machine Configuration — (Symbol, Multiplier for 3-in-a-row)
         symbols = [
             ("🍒", 2),
             ("🍋", 3),
@@ -315,16 +317,15 @@ class Gambling(commands.Cog):
             ("💎", 20),
             ("7️⃣", 50)
         ]
-        
-        weights = [40, 30, 15, 8, 5, 2] # Higher multipliers are rarer
-        
+        weights = [40, 30, 15, 8, 5, 2]  # Higher multipliers are rarer
+
         # Generate 3x3 Grid
         grid = []
         for _ in range(3):
             row = random.choices(symbols, weights=weights, k=3)
             grid.append(row)
 
-        # ── Spinning state ──
+        # ── Spinning state (sent as followup since we deferred) ──
         spin_embed = discord.Embed(
             title="🎰 Super Slots",
             description=f"**Bet: {bet:,} chips**\n\n*Spinning the reels...*",
@@ -338,20 +339,20 @@ class Gambling(commands.Cog):
         spin_file = discord.File(spin_buffer, filename="slots.png")
         spin_embed.set_image(url="attachment://slots.png")
 
-        await interaction.response.send_message(embed=spin_embed, file=spin_file)
+        await interaction.followup.send(embed=spin_embed, file=spin_file)
         await asyncio.sleep(2.0)  # Suspense!
-        
+
         # ── Calculate winnings ──
         total_winnings = 0
         win_row_indices = set()
-        
+
         for i, row in enumerate(grid):
             sym1, sym2, sym3 = row
             if sym1[0] == sym2[0] == sym3[0]:
                 multiplier = sym1[1]
                 total_winnings += (bet * multiplier)
                 win_row_indices.add(i)
-                
+
         # ── Final result image ──
         result_buffer = render_slots_machine(grid, spinning=False, win_rows=win_row_indices)
         result_file = discord.File(result_buffer, filename="slots.png")
@@ -362,7 +363,7 @@ class Gambling(commands.Cog):
             icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else interaction.user.default_avatar.url
         )
         final_embed.set_image(url="attachment://slots.png")
-        
+
         if total_winnings > 0:
             final_embed.color = discord.Color.green()
             final_embed.description = f"**Bet: {bet:,} chips**"
@@ -372,9 +373,9 @@ class Gambling(commands.Cog):
             final_embed.color = discord.Color.red()
             final_embed.description = f"**Bet: {bet:,} chips**"
             final_embed.add_field(name="😢 Better Luck Next Time", value=f"No matching rows.\nLost **{bet:,}** chips.", inline=False)
-        
+
         await interaction.edit_original_response(embed=final_embed, attachments=[result_file])
-        
+
         drop_msg = await handle_perk_drop(interaction.user.id)
         if drop_msg:
             await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while spinning!", ephemeral=True)

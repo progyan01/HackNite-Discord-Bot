@@ -50,13 +50,13 @@ class Economy(commands.Cog):
     @discord.app_commands.command(name="balance", description="View your or someone else's chip balance.")
     @discord.app_commands.describe(member="The member whose balance to check (optional)")
     async def balance(self, interaction: discord.Interaction, member: discord.Member = None):
+        await interaction.response.defer()
         target = member or interaction.user
-        # Allow creating the account if it's the user checking their own balance
         should_create = (member is None) or (member == interaction.user)
         balance = await database.get_balance(target.id, create_if_missing=should_create)
         
         if balance is None:
-            await interaction.response.send_message(f"**{target.display_name}** doesn't have an account yet.", ephemeral=True)
+            await interaction.followup.send(f"**{target.display_name}** doesn't have an account yet.", ephemeral=True)
             return
 
         embed = discord.Embed(
@@ -66,15 +66,15 @@ class Economy(commands.Cog):
         )
         embed.set_thumbnail(url=target.display_avatar.url if target.display_avatar else target.default_avatar.url)
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="daily", description="Claim your daily reward!")
     async def daily(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         user_id = interaction.user.id
         today = datetime.date.today()
         today_str = today.isoformat()
         
-        # Ensure user exists
         await database.get_balance(user_id)
         user_data = await database.get_user_data(user_id)
         
@@ -82,7 +82,7 @@ class Economy(commands.Cog):
         streak = user_data["daily_streak"]
         
         if last_daily_str == today_str:
-            return await interaction.response.send_message("❌ You have already claimed your daily reward today! Come back tomorrow.", ephemeral=True)
+            return await interaction.followup.send("❌ You have already claimed your daily reward today! Come back tomorrow.", ephemeral=True)
             
         if last_daily_str:
             last_daily = datetime.date.fromisoformat(last_daily_str)
@@ -93,7 +93,6 @@ class Economy(commands.Cog):
         else:
             streak = 0
             
-        # Cap streak at 10 for balancing
         effective_streak = min(streak, 10)
         reward = 250 + (effective_streak * 50)
         
@@ -105,10 +104,11 @@ class Economy(commands.Cog):
             description=f"You claimed your daily reward of **{reward:,}** chips!\n🔥 Current Streak: **{streak}** days",
             color=discord.Color.green()
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="inventory", description="View your owned Heist Perks.")
     async def inventory(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         inv = await database.get_inventory(interaction.user.id)
         embed = discord.Embed(
             title=f"🎒 {interaction.user.display_name}'s Inventory",
@@ -121,7 +121,7 @@ class Economy(commands.Cog):
         embed.add_field(name="🌟 20% Boost Perk", value=f"x{inv['perk_20']}", inline=False)
         embed.add_field(name="🦈 Loan Shark Grace", value=f"x{inv['perk_loan_grace']}", inline=False)
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="buy", description="Buy perks from the marketplace.")
     @discord.app_commands.describe(perk="Which perk to buy")
@@ -132,6 +132,7 @@ class Economy(commands.Cog):
         discord.app_commands.Choice(name="Loan Shark Grace (1500 chips)", value="perk_loan_grace")
     ])
     async def buy(self, interaction: discord.Interaction, perk: str):
+        await interaction.response.defer(ephemeral=True)
         prices = {"perk_10": 1000, "perk_15": 2000, "perk_20": 3000, "perk_loan_grace": 1500}
         names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk", "perk_loan_grace": "Loan Shark Grace Perk"}
         
@@ -139,28 +140,29 @@ class Economy(commands.Cog):
         balance = await database.get_balance(interaction.user.id)
         
         if balance < price:
-            return await interaction.response.send_message(f"❌ You don't have enough chips! You need **{price}** chips.", ephemeral=True)
+            return await interaction.followup.send(f"❌ You don't have enough chips! You need **{price}** chips.", ephemeral=True)
             
         await database.update_balance(interaction.user.id, -price)
         await database.update_perk(interaction.user.id, perk, 1)
         
-        await interaction.response.send_message(f"✅ You successfully bought a **{names[perk]}** for **{price}** chips!\nCheck it with `/inventory`.")
+        await interaction.followup.send(f"✅ You successfully bought a **{names[perk]}** for **{price}** chips!\nCheck it with `/inventory`.")
 
     @discord.app_commands.command(name="pay", description="Transfer chips to another user.")
     @discord.app_commands.describe(target="The user to pay", amount="The amount of chips to transfer")
     async def pay(self, interaction: discord.Interaction, target: discord.User, amount: int):
+        await interaction.response.defer()
         if amount <= 0:
-            return await interaction.response.send_message("❌ Amount must be greater than 0.", ephemeral=True)
+            return await interaction.followup.send("❌ Amount must be greater than 0.", ephemeral=True)
         if target.id == interaction.user.id:
-            return await interaction.response.send_message("❌ You cannot pay yourself.", ephemeral=True)
+            return await interaction.followup.send("❌ You cannot pay yourself.", ephemeral=True)
             
         balance = await database.get_balance(interaction.user.id)
         if balance < amount:
-            return await interaction.response.send_message("❌ You don't have enough chips.", ephemeral=True)
+            return await interaction.followup.send("❌ You don't have enough chips.", ephemeral=True)
             
         await database.update_balance(interaction.user.id, -amount)
         await database.update_balance(target.id, amount)
-        await interaction.response.send_message(f"💸 You paid **{target.display_name}** **{amount:,}** chips.")
+        await interaction.followup.send(f"💸 You paid **{target.display_name}** **{amount:,}** chips.")
 
     @discord.app_commands.command(name="give_perk", description="Transfer a perk to another user.")
     @discord.app_commands.describe(target="The user to receive the perk", perk="Which perk to give")
@@ -171,18 +173,19 @@ class Economy(commands.Cog):
         discord.app_commands.Choice(name="Loan Shark Grace", value="perk_loan_grace")
     ])
     async def give_perk(self, interaction: discord.Interaction, target: discord.User, perk: str):
+        await interaction.response.defer(ephemeral=True)
         if target.id == interaction.user.id:
-            return await interaction.response.send_message("❌ You cannot give a perk to yourself.", ephemeral=True)
+            return await interaction.followup.send("❌ You cannot give a perk to yourself.", ephemeral=True)
             
         inv = await database.get_inventory(interaction.user.id)
         if inv.get(perk, 0) < 1:
-            return await interaction.response.send_message("❌ You do not own this perk.", ephemeral=True)
+            return await interaction.followup.send("❌ You do not own this perk.", ephemeral=True)
             
         names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk", "perk_loan_grace": "Loan Shark Grace Perk"}
         
         await database.update_perk(interaction.user.id, perk, -1)
         await database.update_perk(target.id, perk, 1)
-        await interaction.response.send_message(f"🎁 You successfully transferred a **{names[perk]}** to **{target.display_name}**.")
+        await interaction.followup.send(f"🎁 You successfully transferred a **{names[perk]}** to **{target.display_name}**.")
     @discord.app_commands.command(name="profile", description="Generate your Vegas ID profile card.")
     async def profile(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -239,6 +242,7 @@ class Economy(commands.Cog):
 
     @discord.app_commands.command(name="leaderboard", description="View the top 10 richest players.")
     async def leaderboard(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         top_users = await database.get_top_users()
         
         desc = ""
@@ -256,23 +260,23 @@ class Economy(commands.Cog):
             desc += f"{medal} **{name}**: {u['balance']:,} chips\n\n"
             
         embed = discord.Embed(title="🏆 Global Rich List", description=desc or "No data yet.", color=discord.Color.gold())
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="loan", description="Borrow chips from the Loan Shark. (50% interest, due in 24 hours)")
     @discord.app_commands.describe(amount="Amount of chips to borrow")
     async def loan(self, interaction: discord.Interaction, amount: int):
+        await interaction.response.defer(ephemeral=True)
         if amount <= 0:
-            return await interaction.response.send_message("Must borrow a positive amount.", ephemeral=True)
+            return await interaction.followup.send("Must borrow a positive amount.", ephemeral=True)
             
         user_data = await database.get_user_data(interaction.user.id)
         if user_data and user_data["loan_amount"] > 0:
-            return await interaction.response.send_message("You already have an active loan! Pay it off first.", ephemeral=True)
+            return await interaction.followup.send("You already have an active loan! Pay it off first.", ephemeral=True)
             
-        # Restrict loan to half their balance or a base amount
         balance = user_data["balance"] if user_data else 1000
         max_loan = max(1000, balance // 2)
         if amount > max_loan:
-            return await interaction.response.send_message(f"The Loan Shark doesn't trust you that much. Max loan: **{max_loan:,}** chips.", ephemeral=True)
+            return await interaction.followup.send(f"The Loan Shark doesn't trust you that much. Max loan: **{max_loan:,}** chips.", ephemeral=True)
 
         due = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
         total_due = int(amount * 1.5)
@@ -280,24 +284,25 @@ class Economy(commands.Cog):
         await database.update_balance(interaction.user.id, amount)
         await database.update_loan(interaction.user.id, total_due, due.isoformat())
         
-        await interaction.response.send_message(f"🤝 The Loan Shark lent you **{amount:,}** chips.\n⚠️ You owe **{total_due:,}** chips. Due in exactly 24 hours or a bounty will be placed on your head!")
+        await interaction.followup.send(f"🤝 The Loan Shark lent you **{amount:,}** chips.\n⚠️ You owe **{total_due:,}** chips. Due in exactly 24 hours or a bounty will be placed on your head!")
 
     @discord.app_commands.command(name="payback", description="Pay back your active loan.")
     async def payback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         user_data = await database.get_user_data(interaction.user.id)
         if not user_data or user_data["loan_amount"] <= 0:
-            return await interaction.response.send_message("You don't have an active loan to pay back.", ephemeral=True)
+            return await interaction.followup.send("You don't have an active loan to pay back.", ephemeral=True)
             
         balance = user_data["balance"]
         loan_amount = user_data["loan_amount"]
         
         if balance < loan_amount:
-            return await interaction.response.send_message(f"❌ You don't have enough chips! You need **{loan_amount:,}** chips to pay off your loan.", ephemeral=True)
+            return await interaction.followup.send(f"❌ You don't have enough chips! You need **{loan_amount:,}** chips to pay off your loan.", ephemeral=True)
             
         await database.update_balance(interaction.user.id, -loan_amount)
         await database.update_loan(interaction.user.id, 0, None)
         
-        await interaction.response.send_message(f"✅ You successfully paid back your loan of **{loan_amount:,}** chips!")
+        await interaction.followup.send(f"✅ You successfully paid back your loan of **{loan_amount:,}** chips!")
 
     @discord.app_commands.command(name="bounty_hunt", description="Hunt down a wanted player to claim their bounty!")
     async def bounty_hunt(self, interaction: discord.Interaction, target: discord.User):
