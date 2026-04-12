@@ -220,6 +220,71 @@ class Gambling(commands.Cog):
         embed = view.generate_embed()
         await interaction.response.send_message(embed=embed, view=view)
 
+    @discord.app_commands.command(name="crash", description="Play a real-time Crash game where the multiplier goes up until it crashes.")
+    @discord.app_commands.describe(bet="How many chips to bet (minimum 100)")
+    async def crash(self, interaction: discord.Interaction, bet: int):
+        if bet < 100:
+            return await interaction.response.send_message("The minimum betting amount is 100 chips.", ephemeral=True)
+            
+        balance = await database.get_balance(interaction.user.id)
+        if balance < bet:
+            return await interaction.response.send_message(f"You don't have enough chips! Your balance is {balance:,}.", ephemeral=True)
+            
+        # Deduct bet
+        await database.update_balance(interaction.user.id, -bet)
+        
+        view = CrashView(interaction.user, bet)
+        
+        embed = discord.Embed(
+            title="📈 CRASH",
+            description=f"Multiplier: **1.0x**\n\nThe multiplier will go up... don't let it crash!",
+            color=discord.Color.blue()
+        )
+        
+        await interaction.response.send_message(embed=embed, view=view)
+        
+        # Real-time update loop
+        multiplier = 1.0
+        crash_point = round(random.uniform(1.0, 5.0), 1)
+        
+        delay = 1.2
+        while not view.cashed_out and multiplier < crash_point:
+            await asyncio.sleep(delay)
+            if view.cashed_out:
+                break
+                
+            multiplier += round(random.uniform(0.1, 0.4), 1)
+            multiplier = round(multiplier, 1)
+            
+            if multiplier >= crash_point:
+                multiplier = crash_point
+                
+            view.current_multiplier = multiplier
+            
+            if multiplier < crash_point and not view.cashed_out:
+                embed.description = f"Multiplier: **{multiplier:.1f}x**\n\nCash out before it crashes!"
+                try:
+                    await interaction.edit_original_response(embed=embed, view=view)
+                except discord.HTTPException:
+                    pass
+            
+        if not view.cashed_out:
+            for child in view.children:
+                child.disabled = True
+            
+            view.stop()
+            embed.description = f"💥 **CRASHED at {crash_point:.1f}x!**\n\nYou lost **{bet:,}** chips."
+            embed.color = discord.Color.red()
+            
+            try:
+                await interaction.edit_original_response(embed=embed, view=view)
+            except discord.HTTPException:
+                pass
+                
+        drop_msg = await handle_perk_drop(interaction.user.id)
+        if drop_msg:
+            await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while playing Crash!", ephemeral=True)
+
 
     @discord.app_commands.command(name="slots", description="Pull the handle on our 3x3 slot machine!")
     @discord.app_commands.describe(bet="How many chips to bet (minimum 100)")
