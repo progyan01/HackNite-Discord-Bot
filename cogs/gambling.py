@@ -569,7 +569,7 @@ class DuelWaitView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=active_view)
         
         # We need to set active_view's message to the edited message so it can edit it upon resolve
-
+        active_view.message = interaction.message
 
 async def setup(bot):
     await bot.add_cog(Gambling(bot))
