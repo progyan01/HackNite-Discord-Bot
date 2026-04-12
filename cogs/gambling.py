@@ -145,7 +145,35 @@ class BlackjackView(discord.ui.View):
             return await interaction.response.send_message("This is not your table!", ephemeral=True)
             
         await self.dealer_play(interaction)
+        
+class CrashView(discord.ui.View):
+    def __init__(self, user, bet):
+        super().__init__(timeout=None)
+        self.user = user
+        self.bet = bet
+        self.cashed_out = False
+        self.current_multiplier = 1.0
 
+    @discord.ui.button(label="Cash Out", style=discord.ButtonStyle.success, custom_id="cash_out", emoji="💸")
+    async def cash_out(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            return await interaction.response.send_message("Not your game!", ephemeral=True)
+            
+        self.cashed_out = True
+        for child in self.children:
+            child.disabled = True
+            
+        win_amt = int(self.bet * self.current_multiplier)
+        await database.update_balance(self.user.id, win_amt)
+        
+        embed = discord.Embed(
+            title="📈 CRASH",
+            description=f"✅ You cashed out at **{self.current_multiplier:.1f}x**!\nWon **{win_amt:,}** chips.",
+            color=discord.Color.green()
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
 
 class Gambling(commands.Cog):
     def __init__(self, bot):
@@ -270,7 +298,7 @@ class Gambling(commands.Cog):
         else:
             final_embed.color = discord.Color.red()
             final_embed.add_field(name="😢 Better Luck Next Time", value=f"You didn't match any rows.\nLost **{bet:,}** chips.", inline=False)
-            
+        
         await interaction.edit_original_response(embed=final_embed)
         
         drop_msg = await handle_perk_drop(interaction.user.id)
@@ -309,16 +337,16 @@ MATCHUPS = {
         "Brass Knuckles": "Revolver out-powers the Brass Knuckles!"
     },
     "Switchblade": {
-        "Garrote": "Switchblade severs the Garrote (cutting the wire)!",
+        "Choking wire": "Switchblade severs the Choking wire (cutting the wire)!",
         "Poison": "Switchblade stabs the Poison handler before the drink is poured!"
     },
     "Brass Knuckles": {
         "Switchblade": "Brass Knuckles shatter the Switchblade!",
-        "Garrote": "Brass Knuckles knock out the Garrote wielder in a brawl!"
+        "Choking wire": "Brass Knuckles knock out the Choking wire wielder in a brawl!"
     },
-    "Garrote": {
-        "Revolver": "Garrote strangles the Revolver user (from behind)!",
-        "Poison": "Garrote chokes the Poison handler silently!"
+    "Choking wire": {
+        "Revolver": "Choking wire strangles the Revolver user (from behind)!",
+        "Poison": "Choking wire chokes the Poison handler silently!"
     },
     "Poison": {
         "Revolver": "Poison taints the flask of the Revolver marksman!",
@@ -410,8 +438,8 @@ class DuelActiveView(discord.ui.View):
     @discord.ui.button(emoji="👊", label="Brass Knuckles", style=discord.ButtonStyle.secondary)
     async def b3(self, interaction, button): await self.process_choice(interaction, "Brass Knuckles")
 
-    @discord.ui.button(emoji="🪢", label="Garrote", style=discord.ButtonStyle.secondary)
-    async def b4(self, interaction, button): await self.process_choice(interaction, "Garrote")
+    @discord.ui.button(emoji="🪢", label="Choking wire", style=discord.ButtonStyle.secondary)
+    async def b4(self, interaction, button): await self.process_choice(interaction, "Choking wire")
 
     @discord.ui.button(emoji="🧪", label="Poison", style=discord.ButtonStyle.secondary)
     async def b5(self, interaction, button): await self.process_choice(interaction, "Poison")
@@ -467,6 +495,7 @@ class DuelWaitView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=active_view)
         
         # We need to set active_view's message to the edited message so it can edit it upon resolve
-        active_view.message = interaction.message
+
+
 async def setup(bot):
     await bot.add_cog(Gambling(bot))
