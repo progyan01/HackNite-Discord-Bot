@@ -245,7 +245,8 @@ class Gambling(commands.Cog):
         
         # Real-time update loop
         multiplier = 1.0
-        crash_point = round(random.uniform(1.0, 5.0), 1)
+        u = random.uniform(0.2, 1.0)
+        crash_point = round(1.0 / u, 1)
         
         delay = 1.2
         while not view.cashed_out and multiplier < crash_point:
