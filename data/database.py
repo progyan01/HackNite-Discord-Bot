@@ -39,6 +39,26 @@ async def setup():
             await db.execute("ALTER TABLE inventory ADD COLUMN perk_20 INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+            
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN loan_amount INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN loan_due TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN bounty INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
 
         await db.commit()
 
@@ -100,12 +120,66 @@ async def get_last_daily(user_id: int) -> str | None:
                 return row[0]
             return None
 
-async def update_last_daily(user_id: int, date_str: str):
-    """Sets the ISO formatted string of the last time a user claimed daily."""
+async def update_last_daily(user_id: int, date_str: str, streak: int = 0):
+    """Sets the ISO formatted string of the last time a user claimed daily and updates streak."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-            INSERT INTO users (user_id, balance, last_daily) 
-            VALUES (?, 1000, ?)
-            ON CONFLICT(user_id) DO UPDATE SET last_daily = excluded.last_daily
-        """, (user_id, date_str))
+            INSERT INTO users (user_id, balance, last_daily, daily_streak) 
+            VALUES (?, 1000, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET last_daily = excluded.last_daily, daily_streak = excluded.daily_streak
+        """, (user_id, date_str, streak))
         await db.commit()
+
+async def get_user_data(user_id: int) -> dict | None:
+    """Gets all relevant info for a user (balance, streaks, loans, bounties)"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT balance, last_daily, daily_streak, loan_amount, loan_due, bounty FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return {
+                    "balance": row[0],
+                    "last_daily": row[1],
+                    "daily_streak": row[2] or 0,
+                    "loan_amount": row[3] or 0,
+                    "loan_due": row[4],
+                    "bounty": row[5] or 0
+                }
+            return None
+
+async def update_loan(user_id: int, amount: int, due: str | None):
+    """Updates the user's loan"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO users (user_id, balance, loan_amount, loan_due) 
+            VALUES (?, 1000, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET loan_amount = excluded.loan_amount, loan_due = excluded.loan_due
+        """, (user_id, amount, due))
+        await db.commit()
+
+async def update_bounty(user_id: int, amount_change: int):
+    """Updates the user's bounty by amount_change"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO users (user_id, balance, bounty) 
+            VALUES (?, 1000, MAX(0, ?))
+            ON CONFLICT(user_id) DO UPDATE SET bounty = MAX(0, bounty + ?)
+        """, (user_id, amount_change, amount_change))
+        await db.commit()
+
+async def get_all_loans():
+    """Gets all active loans"""
+    loans = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id, loan_amount, loan_due FROM users WHERE loan_amount > 0 AND loan_due IS NOT NULL") as cursor:
+            async for row in cursor:
+                loans.append({"user_id": row[0], "loan_amount": row[1], "loan_due": row[2]})
+    return loans
+
+async def get_top_users(limit: int = 10) -> list:
+    """Gets the top users by balance"""
+    users = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT ?", (limit,)) as cursor:
+            async for row in cursor:
+                users.append({"user_id": row[0], "balance": row[1]})
+    return users
