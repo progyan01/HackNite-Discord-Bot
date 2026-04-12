@@ -24,8 +24,8 @@ class Economy(commands.Cog):
             try:
                 due_date = datetime.datetime.fromisoformat(loan["loan_due"])
                 if now > due_date:
-                    # Loan overdue! Apply 1.5x bounty and clear loan
-                    bounty_amt = int(loan["loan_amount"] * 1.5)
+                    # Loan overdue! Apply 1.3x bounty and clear loan
+                    bounty_amt = int(loan["loan_amount"] * 1.3)
                     await database.update_bounty(loan["user_id"], bounty_amt)
                     await database.update_loan(loan["user_id"], 0, None)
             except Exception:
@@ -256,6 +256,23 @@ class Economy(commands.Cog):
         await database.update_loan(interaction.user.id, total_due, due.isoformat())
         
         await interaction.response.send_message(f"🤝 The Loan Shark lent you **{amount:,}** chips.\n⚠️ You owe **{total_due:,}** chips. Due in exactly 24 hours or a bounty will be placed on your head!")
+
+    @discord.app_commands.command(name="payback", description="Pay back your active loan.")
+    async def payback(self, interaction: discord.Interaction):
+        user_data = await database.get_user_data(interaction.user.id)
+        if not user_data or user_data["loan_amount"] <= 0:
+            return await interaction.response.send_message("You don't have an active loan to pay back.", ephemeral=True)
+            
+        balance = user_data["balance"]
+        loan_amount = user_data["loan_amount"]
+        
+        if balance < loan_amount:
+            return await interaction.response.send_message(f"❌ You don't have enough chips! You need **{loan_amount:,}** chips to pay off your loan.", ephemeral=True)
+            
+        await database.update_balance(interaction.user.id, -loan_amount)
+        await database.update_loan(interaction.user.id, 0, None)
+        
+        await interaction.response.send_message(f"✅ You successfully paid back your loan of **{loan_amount:,}** chips!")
 
     @discord.app_commands.command(name="bounty_hunt", description="Hunt down a wanted player to claim their bounty!")
     async def bounty_hunt(self, interaction: discord.Interaction, target: discord.User):
