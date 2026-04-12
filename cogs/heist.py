@@ -49,17 +49,25 @@ class Heist(commands.Cog):
         
         self.active_heists[interaction.user.id] = {
             "target": target,
-            "crew": [interaction.user],
+            "roles": {"Driver": interaction.user, "Muscle": None, "Hacker": None, "Inside Man": None},
             "start_time": datetime.datetime.now(datetime.timezone.utc)
         }
         await interaction.response.send_message(
             f"💰 {interaction.user.mention} is planning a heist on a **{target.replace('_', ' ').title()}**!\n"
-            f"Crew: {interaction.user.display_name}. Anyone else want in? (Use `/heist join {interaction.user.display_name}`)\n"
+            f"Host is taking the **Driver** role. Anyone else want in?\n"
+            f"(Use `/heist join {interaction.user.display_name} <role>`)\n"
             f"⏱️ You have **2 minutes** to launch the heist before the lobby expires."
         )
 
     @heist_group.command(name="join", description="Join an active heist lobby")
-    async def join_heist(self, interaction: discord.Interaction, host: discord.User):
+    @app_commands.describe(role="What role do you want to play?")
+    @app_commands.choices(role=[
+        app_commands.Choice(name="Driver", value="Driver"),
+        app_commands.Choice(name="Muscle", value="Muscle"),
+        app_commands.Choice(name="Hacker", value="Hacker"),
+        app_commands.Choice(name="Inside Man", value="Inside Man")
+    ])
+    async def join_heist(self, interaction: discord.Interaction, host: discord.User, role: str):
         if interaction.user.id in self.heist_timeouts:
             expiry = self.heist_timeouts[interaction.user.id]
             if datetime.datetime.now(datetime.timezone.utc) < expiry:
@@ -74,13 +82,17 @@ class Heist(commands.Cog):
             await interaction.response.send_message("That user doesn't have an active heist lobby.", ephemeral=True)
             return
         
-        if interaction.user in lobby["crew"]:
+        if interaction.user in lobby["roles"].values():
             await interaction.response.send_message("You are already in this heist crew!", ephemeral=True)
             return
 
-        lobby["crew"].append(interaction.user)
-        crew_names = ", ".join([user.display_name for user in lobby["crew"]])
-        await interaction.response.send_message(f"😎 {interaction.user.mention} joined the heist! Current crew: {crew_names}")
+        if lobby["roles"].get(role) is not None:
+            await interaction.response.send_message(f"The **{role}** role is already filled!", ephemeral=True)
+            return
+
+        lobby["roles"][role] = interaction.user
+        crew_names = ", ".join([f"{u.display_name} ({r})" for r, u in lobby["roles"].items() if u is not None])
+        await interaction.response.send_message(f"😎 {interaction.user.mention} joined the heist as **{role}**!\nCurrent crew: {crew_names}")
 
     @heist_group.command(name="launch", description="Launch your planned heist!")
     @app_commands.describe(perk="Optional perk to boost your success chance")
@@ -96,16 +108,20 @@ class Heist(commands.Cog):
             return
         
         target = lobby["target"]
-        crew = lobby["crew"]
+        roles = lobby["roles"]
+        crew = [u for u in roles.values() if u is not None]
         crew_size = len(crew)
         
-        # Skeleton check for required crew sizes
-        if target == "jewelry_store" and crew_size < 2:
-            await interaction.response.send_message("You need at least 2 people for the Jewelry Store!")
-            return
-        if target == "casino_vault" and crew_size < 3:
-            await interaction.response.send_message("You need at least 3 people for the Casino Vault!")
-            return
+        # Check for required roles
+        if target == "gas_station":
+            if not roles["Driver"]:
+                return await interaction.response.send_message("You need a **Driver** for the Gas Station!", ephemeral=True)
+        elif target == "jewelry_store":
+            if not roles["Driver"] or not roles["Muscle"]:
+                return await interaction.response.send_message("You need at least a **Driver** and **Muscle** for the Jewelry Store!", ephemeral=True)
+        elif target == "casino_vault":
+            if not roles["Driver"] or not roles["Muscle"] or not roles["Hacker"] or not roles["Inside Man"]:
+                return await interaction.response.send_message("You need a full crew (**Driver, Muscle, Hacker, Inside Man**) for the Casino Vault!", ephemeral=True)
 
         # Configure mechanics per target
         if target == "gas_station":
