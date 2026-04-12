@@ -121,16 +121,17 @@ class Heist(commands.Cog):
         crew = [u for u in roles.values() if u is not None]
         crew_size = len(crew)
         
-        # Check for required roles
+        # Check for optimal role combinations
+        optimal_crew = False
         if target == "gas_station":
-            if not roles["Driver"]:
-                return await interaction.response.send_message("You need a **Driver** for the Gas Station!", ephemeral=True)
+            if roles.get("Driver"):
+                optimal_crew = True
         elif target == "jewelry_store":
-            if not roles["Driver"] or not roles["Muscle"]:
-                return await interaction.response.send_message("You need at least a **Driver** and **Muscle** for the Jewelry Store!", ephemeral=True)
+            if roles.get("Driver") and roles.get("Muscle"):
+                optimal_crew = True
         elif target == "casino_vault":
-            if not roles["Driver"] or not roles["Muscle"] or not roles["Hacker"] or not roles["Inside Man"]:
-                return await interaction.response.send_message("You need a full crew (**Driver, Muscle, Hacker, Inside Man**) for the Casino Vault!", ephemeral=True)
+            if roles.get("Driver") and roles.get("Muscle") and roles.get("Hacker") and roles.get("Inside Man"):
+                optimal_crew = True
 
         # Configure mechanics per target
         if target == "gas_station":
@@ -148,6 +149,9 @@ class Heist(commands.Cog):
             share = random.randint(4000, 5000)
             fail_penalty = 1500
             timeout_duration = datetime.timedelta(minutes=2)
+
+        if optimal_crew:
+            success_threshold += 7.5
 
         perk_name = ""
         if perk:
@@ -177,8 +181,13 @@ class Heist(commands.Cog):
             for user in crew:
                 await database.update_balance(user.id, share)
                 
-            perk_text = f"\n*Used {perk_name} for a better chance!*" if perk else ""
-            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ').title()} cleanly and got away with **{payout}** chips to split between the crew (**{share}** chips each)!{perk_text}")
+            modifiers_text = ""
+            if perk:
+                modifiers_text += f"\n*Used {perk_name} for a better chance!*"
+            if optimal_crew:
+                modifiers_text += f"\n*Perfect crew composition provided a 15% success boost!*"
+                
+            await interaction.response.send_message(f"🎉 SUCCESS! You hit the {target.replace('_', ' ').title()} cleanly and got away with **{payout}** chips to split between the crew (**{share}** chips each)!{modifiers_text}")
         else:
             expiry_time = datetime.datetime.now(datetime.timezone.utc) + timeout_duration
             for user in crew:
@@ -190,8 +199,13 @@ class Heist(commands.Cog):
             secs = timeout_duration.total_seconds() % 60
             time_str = f"{int(mins)}m {int(secs)}s" if mins > 0 else f"{int(secs)}s"
             
-            perk_text = f"\n*Even with the {perk_name}, luck was not on your side.*" if perk else ""
-            await interaction.response.send_message(f"🚨 FAILED! The cops showed up at the {target.replace('_', ' ').title()}. You all got busted! Each crew member lost **{fail_penalty}** chips and is in time-out for **{time_str}**!{perk_text}")
+            modifiers_text_fail = ""
+            if perk:
+                modifiers_text_fail += f"\n*Even with the {perk_name}, luck was not on your side.*"
+            if optimal_crew:
+                modifiers_text_fail += f"\n*Even with a perfect crew, luck was not on your side.*"
+                
+            await interaction.response.send_message(f"🚨 FAILED! The cops showed up at the {target.replace('_', ' ').title()}. You all got busted! Each crew member lost **{fail_penalty}** chips and is in time-out for **{time_str}**!{modifiers_text_fail}")
 
         # Clean up lobby
         del self.active_heists[interaction.user.id]
