@@ -3,7 +3,7 @@ from discord.ext import commands
 import random
 import asyncio
 from data import database
-from utils.image_gen import render_blackjack_table
+from utils.image_gen import render_blackjack_table, render_slots_machine
 
 def generate_deck():
     suits = ['♠', '♥', '♦', '♣']
@@ -323,54 +323,57 @@ class Gambling(commands.Cog):
         for _ in range(3):
             row = random.choices(symbols, weights=weights, k=3)
             grid.append(row)
-            
-        def create_embed(spinning=False):
-            embed = discord.Embed(title="🎰 Super Slots", color=discord.Color.gold() if not spinning else discord.Color.blurple())
-            embed.set_author(name=f"{interaction.user.display_name}'s Spin", icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else interaction.user.default_avatar.url)
-            
-            # Format Grid Display
-            board = ""
-            for i, row in enumerate(grid):
-                if spinning:
-                    board += "💠 | 💠 | 💠\n"
-                else:
-                    emoji_row = " | ".join([sym[0] for sym in row])
-                    board += f"{emoji_row}\n"
-                    
-            # A little slot machine visual frame trick:
-            frame = f"```\n{board}```" if spinning else f">\t {board.replace(chr(10), chr(10) + '>\t ')}"
-            frame = frame.strip("\t >\n")
 
-            embed.description = f"**Current Bet: {bet:,} chips**\n\n> {board.replace(chr(10), chr(10) + '> ')}\n"
-            return embed
+        # ── Spinning state ──
+        spin_embed = discord.Embed(
+            title="🎰 Super Slots",
+            description=f"**Bet: {bet:,} chips**\n\n*Spinning the reels...*",
+            color=discord.Color.blurple()
+        )
+        spin_embed.set_author(
+            name=f"{interaction.user.display_name}'s Spin",
+            icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else interaction.user.default_avatar.url
+        )
+        spin_buffer = render_slots_machine(grid, spinning=True)
+        spin_file = discord.File(spin_buffer, filename="slots.png")
+        spin_embed.set_image(url="attachment://slots.png")
 
-        # Send initial "spinning" animation
-        await interaction.response.send_message(embed=create_embed(spinning=True))
-        await asyncio.sleep(1.5) # Simulate suspense
+        await interaction.response.send_message(embed=spin_embed, file=spin_file)
+        await asyncio.sleep(2.0)  # Suspense!
         
-        # Calculate Winnings
+        # ── Calculate winnings ──
         total_winnings = 0
-        winning_rows = 0
+        win_row_indices = set()
         
-        for row in grid:
+        for i, row in enumerate(grid):
             sym1, sym2, sym3 = row
             if sym1[0] == sym2[0] == sym3[0]:
                 multiplier = sym1[1]
                 total_winnings += (bet * multiplier)
-                winning_rows += 1
+                win_row_indices.add(i)
                 
-        # Update embed
-        final_embed = create_embed(spinning=False)
+        # ── Final result image ──
+        result_buffer = render_slots_machine(grid, spinning=False, win_rows=win_row_indices)
+        result_file = discord.File(result_buffer, filename="slots.png")
+
+        final_embed = discord.Embed(title="🎰 Super Slots", color=discord.Color.gold())
+        final_embed.set_author(
+            name=f"{interaction.user.display_name}'s Spin",
+            icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else interaction.user.default_avatar.url
+        )
+        final_embed.set_image(url="attachment://slots.png")
         
         if total_winnings > 0:
             final_embed.color = discord.Color.green()
-            final_embed.add_field(name="🎉 Winner!", value=f"You matched {winning_rows} line(s) and won **{total_winnings:,}** chips!", inline=False)
+            final_embed.description = f"**Bet: {bet:,} chips**"
+            final_embed.add_field(name="🎉 Winner!", value=f"You matched **{len(win_row_indices)}** line(s) and won **{total_winnings:,}** chips!", inline=False)
             await database.update_balance(interaction.user.id, total_winnings)
         else:
             final_embed.color = discord.Color.red()
-            final_embed.add_field(name="😢 Better Luck Next Time", value=f"You didn't match any rows.\nLost **{bet:,}** chips.", inline=False)
+            final_embed.description = f"**Bet: {bet:,} chips**"
+            final_embed.add_field(name="😢 Better Luck Next Time", value=f"No matching rows.\nLost **{bet:,}** chips.", inline=False)
         
-        await interaction.edit_original_response(embed=final_embed)
+        await interaction.edit_original_response(embed=final_embed, attachments=[result_file])
         
         drop_msg = await handle_perk_drop(interaction.user.id)
         if drop_msg:
