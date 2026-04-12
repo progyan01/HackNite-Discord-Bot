@@ -13,6 +13,7 @@ async def on_ready():
     await bot.load_extension("cogs.heist")
     await bot.load_extension("cogs.gambling")
     await bot.load_extension("cogs.economy")
+    await bot.load_extension("cogs.help")
     await bot.tree.sync()
     print(f"Logged in as {bot.user}")
 
