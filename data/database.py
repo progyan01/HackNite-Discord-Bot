@@ -41,6 +41,11 @@ async def setup():
             pass
             
         try:
+            await db.execute("ALTER TABLE inventory ADD COLUMN perk_loan_grace INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+            
+        try:
             await db.execute("ALTER TABLE users ADD COLUMN daily_streak INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass
@@ -65,17 +70,17 @@ async def setup():
 async def get_inventory(user_id: int) -> dict:
     """Gets the user's perk inventory."""
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT perk_10, perk_15, perk_20 FROM inventory WHERE user_id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT perk_10, perk_15, perk_20, perk_loan_grace FROM inventory WHERE user_id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
             if row:
-                return {"perk_10": row[0], "perk_15": row[1], "perk_20": row[2]}
+                return {"perk_10": row[0], "perk_15": row[1], "perk_20": row[2], "perk_loan_grace": row[3]}
             else:
-                return {"perk_10": 0, "perk_15": 0, "perk_20": 0}
+                return {"perk_10": 0, "perk_15": 0, "perk_20": 0, "perk_loan_grace": 0}
 
 async def update_perk(user_id: int, perk_type: str, amount: int):
-    """Updates the quantity of a specific perk. perk_type should be 'perk_10', 'perk_15', or 'perk_20'."""
+    """Updates the quantity of a specific perk."""
     # Ensure perk_type is strictly what we expect to avoid SQL injection since we format the string
-    if perk_type not in ["perk_10", "perk_15", "perk_20"]:
+    if perk_type not in ["perk_10", "perk_15", "perk_20", "perk_loan_grace"]:
         return
         
     async with aiosqlite.connect(DB_PATH) as db:

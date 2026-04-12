@@ -24,6 +24,22 @@ class Economy(commands.Cog):
             try:
                 due_date = datetime.datetime.fromisoformat(loan["loan_due"])
                 if now > due_date:
+                    inv = await database.get_inventory(loan["user_id"])
+                    if inv.get("perk_loan_grace", 0) > 0:
+                        # Consume perk and extend the due date by 24 hours
+                        await database.update_perk(loan["user_id"], "perk_loan_grace", -1)
+                        new_due_date = due_date + datetime.timedelta(hours=24)
+                        await database.update_loan(loan["user_id"], loan["loan_amount"], new_due_date.isoformat())
+                        
+                        # Try to notify the user
+                        try:
+                            user = self.bot.get_user(loan["user_id"]) or await self.bot.fetch_user(loan["user_id"])
+                            if user:
+                                await user.send("🦈 **The Loan Shark was about to put a bounty on you!** But they saw your **Loan Shark Grace** perk. They consumed it and extended your deadline by 24 hours!")
+                        except Exception:
+                            pass
+                        continue
+
                     # Loan overdue! Apply 1.3x bounty and clear loan
                     bounty_amt = int(loan["loan_amount"] * 1.3)
                     await database.update_bounty(loan["user_id"], bounty_amt)
@@ -103,6 +119,7 @@ class Economy(commands.Cog):
         embed.add_field(name="🔸 10% Boost Perk", value=f"x{inv['perk_10']}", inline=False)
         embed.add_field(name="🔹 15% Boost Perk", value=f"x{inv['perk_15']}", inline=False)
         embed.add_field(name="🌟 20% Boost Perk", value=f"x{inv['perk_20']}", inline=False)
+        embed.add_field(name="🦈 Loan Shark Grace", value=f"x{inv['perk_loan_grace']}", inline=False)
         
         await interaction.response.send_message(embed=embed)
 
@@ -111,11 +128,12 @@ class Economy(commands.Cog):
     @discord.app_commands.choices(perk=[
         discord.app_commands.Choice(name="10% Boost (1000 chips)", value="perk_10"),
         discord.app_commands.Choice(name="15% Boost (2000 chips)", value="perk_15"),
-        discord.app_commands.Choice(name="20% Boost (3000 chips)", value="perk_20")
+        discord.app_commands.Choice(name="20% Boost (3000 chips)", value="perk_20"),
+        discord.app_commands.Choice(name="Loan Shark Grace (1500 chips)", value="perk_loan_grace")
     ])
     async def buy(self, interaction: discord.Interaction, perk: str):
-        prices = {"perk_10": 1000, "perk_15": 2000, "perk_20": 3000}
-        names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk"}
+        prices = {"perk_10": 1000, "perk_15": 2000, "perk_20": 3000, "perk_loan_grace": 1500}
+        names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk", "perk_loan_grace": "Loan Shark Grace Perk"}
         
         price = prices[perk]
         balance = await database.get_balance(interaction.user.id)
@@ -149,7 +167,8 @@ class Economy(commands.Cog):
     @discord.app_commands.choices(perk=[
         discord.app_commands.Choice(name="10% Boost", value="perk_10"),
         discord.app_commands.Choice(name="15% Boost", value="perk_15"),
-        discord.app_commands.Choice(name="20% Boost", value="perk_20")
+        discord.app_commands.Choice(name="20% Boost", value="perk_20"),
+        discord.app_commands.Choice(name="Loan Shark Grace", value="perk_loan_grace")
     ])
     async def give_perk(self, interaction: discord.Interaction, target: discord.User, perk: str):
         if target.id == interaction.user.id:
@@ -159,7 +178,7 @@ class Economy(commands.Cog):
         if inv.get(perk, 0) < 1:
             return await interaction.response.send_message("❌ You do not own this perk.", ephemeral=True)
             
-        names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk"}
+        names = {"perk_10": "10% Boost Perk", "perk_15": "15% Boost Perk", "perk_20": "20% Boost Perk", "perk_loan_grace": "Loan Shark Grace Perk"}
         
         await database.update_perk(interaction.user.id, perk, -1)
         await database.update_perk(target.id, perk, 1)
