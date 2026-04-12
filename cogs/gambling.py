@@ -3,6 +3,7 @@ from discord.ext import commands
 import random
 import asyncio
 from data import database
+from utils.image_gen import render_blackjack_table
 
 def generate_deck():
     suits = ['♠', '♥', '♦', '♣']
@@ -62,22 +63,26 @@ class BlackjackView(discord.ui.View):
         self.player_hand = [self.deck.pop(), self.deck.pop()]
         self.dealer_hand = [self.deck.pop(), self.deck.pop()]
 
-    def generate_embed(self, game_over=False, result_msg="", color=discord.Color.gold()):
+    def generate_embed_and_file(self, game_over=False, result_msg="", color=discord.Color.gold()):
         embed = discord.Embed(title="🃏 Premium Blackjack", color=color)
         embed.set_author(name=f"{self.user.display_name}'s Table", icon_url=self.user.display_avatar.url if self.user.display_avatar else self.user.default_avatar.url)
         
         player_val = calculate_hand_value(self.player_hand)
-        embed.add_field(name=f"👤 Your Hand ({player_val})", value=format_hand(self.player_hand), inline=False)
+        embed.add_field(name=f"👤 Your Hand Value: **{player_val}**", value="\u200b", inline=False)
         
         if game_over:
             dealer_val = calculate_hand_value(self.dealer_hand)
-            embed.add_field(name=f"🏦 Dealer's Hand ({dealer_val})", value=format_hand(self.dealer_hand), inline=False)
+            embed.add_field(name=f"🏦 Dealer's Hand Value: **{dealer_val}**", value="\u200b", inline=False)
             embed.add_field(name="📜 Outcome", value=f"**{result_msg}**", inline=False)
         else:
-            embed.add_field(name="🏦 Dealer's Hand", value=f"`{self.dealer_hand[0]}` `?`", inline=False)
+            embed.add_field(name="🏦 Dealer's Hand Value: **?**", value="\u200b", inline=False)
             embed.set_footer(text=f"Stake: {self.bet:,} chips")
             
-        return embed
+        buffer = render_blackjack_table(self.player_hand, self.dealer_hand, game_over)
+        file = discord.File(buffer, filename="table.png")
+        embed.set_image(url="attachment://table.png")
+            
+        return embed, file
 
     async def dealer_play(self, interaction):
         self.stop()
@@ -108,8 +113,8 @@ class BlackjackView(discord.ui.View):
             msg = f"Push! You get your {self.bet:,} chips back."
             color = discord.Color.orange()
             
-        embed = self.generate_embed(True, msg, color)
-        await interaction.response.edit_message(embed=embed, view=self)
+        embed, file = self.generate_embed_and_file(True, msg, color)
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
         
         drop_msg = await handle_perk_drop(self.user.id)
         if drop_msg:
@@ -129,15 +134,15 @@ class BlackjackView(discord.ui.View):
                 child.disabled = True
             
             # Loss, bet is already deducted
-            embed = self.generate_embed(True, f"Bust! You went over 21. You lost {self.bet:,} chips.", discord.Color.red())
-            await interaction.response.edit_message(embed=embed, view=self)
+            embed, file = self.generate_embed_and_file(True, f"Bust! You went over 21. You lost {self.bet:,} chips.", discord.Color.red())
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
             
             drop_msg = await handle_perk_drop(self.user.id)
             if drop_msg:
                 await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while playing!", ephemeral=True)
         else:
-            embed = self.generate_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            embed, file = self.generate_embed_and_file()
+            await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
 
     @discord.ui.button(label="Stand", style=discord.ButtonStyle.secondary, custom_id="stand", emoji="🛑")
     async def stand(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -204,21 +209,21 @@ class Gambling(commands.Cog):
             
             if dealer_val == 21:
                 await database.update_balance(interaction.user.id, bet)
-                embed = view.generate_embed(True, f"Push! Both have Blackjack. You got your {bet:,} chips back.", discord.Color.orange())
+                embed, file = view.generate_embed_and_file(True, f"Push! Both have Blackjack. You got your {bet:,} chips back.", discord.Color.orange())
             else:
                 win_amount = int(bet * 2.5) # 3:2 payout => returns bet + 1.5 * bet
                 await database.update_balance(interaction.user.id, win_amount)
-                embed = view.generate_embed(True, f"Blackjack! You won {win_amount:,} chips!", discord.Color.green())
+                embed, file = view.generate_embed_and_file(True, f"Blackjack! You won {win_amount:,} chips!", discord.Color.green())
                 
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, file=file)
             
             drop_msg = await handle_perk_drop(interaction.user.id)
             if drop_msg:
                 await interaction.followup.send(f"🎉 **RARE DROP!** You found a **{drop_msg}** while playing!", ephemeral=True)
             return
 
-        embed = view.generate_embed()
-        await interaction.response.send_message(embed=embed, view=view)
+        embed, file = view.generate_embed_and_file()
+        await interaction.response.send_message(embed=embed, view=view, file=file)
 
     @discord.app_commands.command(name="crash", description="Play a real-time Crash game where the multiplier goes up until it crashes.")
     @discord.app_commands.describe(bet="How many chips to bet (minimum 100)")
