@@ -270,7 +270,7 @@ class Gambling(commands.Cog):
         else:
             final_embed.color = discord.Color.red()
             final_embed.add_field(name="😢 Better Luck Next Time", value=f"You didn't match any rows.\nLost **{bet:,}** chips.", inline=False)
-            
+        
         await interaction.edit_original_response(embed=final_embed)
         
         drop_msg = await handle_perk_drop(interaction.user.id)
@@ -309,16 +309,16 @@ MATCHUPS = {
         "Brass Knuckles": "Revolver out-powers the Brass Knuckles!"
     },
     "Switchblade": {
-        "Garrote": "Switchblade severs the Garrote (cutting the wire)!",
+        "Choking wire": "Switchblade severs the Choking wire (cutting the wire)!",
         "Poison": "Switchblade stabs the Poison handler before the drink is poured!"
     },
     "Brass Knuckles": {
         "Switchblade": "Brass Knuckles shatter the Switchblade!",
-        "Garrote": "Brass Knuckles knock out the Garrote wielder in a brawl!"
+        "Choking wire": "Brass Knuckles knock out the Choking wire wielder in a brawl!"
     },
-    "Garrote": {
-        "Revolver": "Garrote strangles the Revolver user (from behind)!",
-        "Poison": "Garrote chokes the Poison handler silently!"
+    "Choking wire": {
+        "Revolver": "Choking wire strangles the Revolver user (from behind)!",
+        "Poison": "Choking wire chokes the Poison handler silently!"
     },
     "Poison": {
         "Revolver": "Poison taints the flask of the Revolver marksman!",
@@ -410,8 +410,8 @@ class DuelActiveView(discord.ui.View):
     @discord.ui.button(emoji="👊", label="Brass Knuckles", style=discord.ButtonStyle.secondary)
     async def b3(self, interaction, button): await self.process_choice(interaction, "Brass Knuckles")
 
-    @discord.ui.button(emoji="🪢", label="Garrote", style=discord.ButtonStyle.secondary)
-    async def b4(self, interaction, button): await self.process_choice(interaction, "Garrote")
+    @discord.ui.button(emoji="🪢", label="Choking wire", style=discord.ButtonStyle.secondary)
+    async def b4(self, interaction, button): await self.process_choice(interaction, "Choking wire")
 
     @discord.ui.button(emoji="🧪", label="Poison", style=discord.ButtonStyle.secondary)
     async def b5(self, interaction, button): await self.process_choice(interaction, "Poison")
